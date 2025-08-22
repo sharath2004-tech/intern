@@ -96,6 +96,17 @@
 st.title("Indian Bank Stocks Price Predictor")
 
 # Hardcoded credentials (for demo)
+
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+import datetime
+import streamlit_authenticator as stauth
 USERNAME = "user"
 PASSWORD = "password"
 
@@ -119,16 +130,7 @@ else:
     # Your existing app code goes here
     st.write("Welcome to the stock predictor!")
 
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score
-import datetime
-import streamlit_authenticator as stauth
+
 
 
 # Streamlit UI
