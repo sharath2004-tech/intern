@@ -146,27 +146,31 @@ else:
     if data.empty:
         st.error("No data fetched. Check ticker or date range.")
     else:
-        # Robust Close extraction
+        # Robustly get Close prices
         if isinstance(data.columns, pd.MultiIndex):
             if 'Close' in data.columns.get_level_values(0):
                 data_close = data['Close']
-                if isinstance(data_close, pd.Series):
-                    data_close = data_close.to_frame()
             else:
                 st.error("Close column not found in downloaded data.")
                 st.stop()
         else:
             if 'Close' in data.columns:
-                data_close = data[['Close']]
+                data_close = data['Close']  # Could be Series
             else:
                 st.error("Close column not found in downloaded data.")
                 st.stop()
 
-        # Use data_close for processing
+        # Convert Series to DataFrame if needed
+        if isinstance(data_close, pd.Series):
+            data_close = data_close.to_frame(name='Close')
+
+        # Ensure numeric and clean data
+        data_close['Close'] = pd.to_numeric(data_close['Close'], errors='coerce')
+        data_close.dropna(subset=['Close'], inplace=True)
+        data_close.reset_index(inplace=True)
+
+        # Use data_close for all further processing
         data = data_close.copy()
-        data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
-        data.dropna(subset=['Close'], inplace=True)
-        data.reset_index(inplace=True)
 
         st.subheader('Historical Close Price')
         plt.figure(figsize=(12,6))
