@@ -146,12 +146,24 @@ else:
     if data.empty:
         st.error("No data fetched. Check ticker or date range.")
     else:
-        # Fix for multi-level columns / ensure Close is a DataFrame
+        # Robust Close extraction
         if isinstance(data.columns, pd.MultiIndex):
-            data = data['Close']
-            if isinstance(data, pd.Series):
-                data = data.to_frame()
+            if 'Close' in data.columns.get_level_values(0):
+                data_close = data['Close']
+                if isinstance(data_close, pd.Series):
+                    data_close = data_close.to_frame()
+            else:
+                st.error("Close column not found in downloaded data.")
+                st.stop()
+        else:
+            if 'Close' in data.columns:
+                data_close = data[['Close']]
+            else:
+                st.error("Close column not found in downloaded data.")
+                st.stop()
 
+        # Use data_close for processing
+        data = data_close.copy()
         data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
         data.dropna(subset=['Close'], inplace=True)
         data.reset_index(inplace=True)
