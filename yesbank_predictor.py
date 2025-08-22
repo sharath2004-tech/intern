@@ -92,6 +92,33 @@
 # plt.title(f'{ticker} Historical & Predicted Close Price')
 # plt.legend()
 # plt.show()
+# Simple authentication
+st.title("Indian Bank Stocks Price Predictor")
+
+# Hardcoded credentials (for demo)
+USERNAME = "user"
+PASSWORD = "password"
+
+# Session state for login
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    st.subheader("Sign In")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    login_btn = st.button("Login")
+
+    if login_btn:
+        if username == USERNAME and password == PASSWORD:
+            st.session_state.logged_in = True
+            st.success("Logged in successfully!")
+        else:
+            st.error("Invalid username or password")
+else:
+    # Your existing app code goes here
+    st.write("Welcome to the stock predictor!")
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -101,6 +128,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 import datetime
+import streamlit_authenticator as stauth
+
 
 # Streamlit UI
 st.title('Indian Bank Stocks Price Predictor')
@@ -127,9 +156,19 @@ else:
     data.reset_index(inplace=True)
     st.write(data.tail())
 
-    # Plot historical close price
+    # Ensure 'Close' is numeric
+    data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
+    data.dropna(subset=['Close'], inplace=True)
+
+    # Plot historical close price using matplotlib
     st.subheader('Historical Close Price')
-    st.line_chart(data['Close'])
+    plt.figure(figsize=(12,6))
+    plt.plot(data['Date'], data['Close'], label='Close Price')
+    plt.xlabel('Date')
+    plt.ylabel('Close Price (INR)')
+    plt.title(f'{ticker} Historical Close Price')
+    plt.legend()
+    st.pyplot(plt)
 
     # Feature Engineering
     if len(data) < 4:
@@ -166,7 +205,7 @@ else:
             st.subheader(f'Predicted Close Price for {future_date_input}')
             st.write(f"₹{future_price:.2f}")
 
-            # Plot historical + predicted point
+            # Plot historical + predicted point using matplotlib
             st.subheader('Historical & Predicted Price')
             plt.figure(figsize=(12,6))
             plt.plot(data['Date'], data['Close'], label='Historical Close Price')
