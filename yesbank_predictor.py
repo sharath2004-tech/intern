@@ -103,10 +103,16 @@ from sklearn.metrics import mean_squared_error, r2_score
 import datetime
 
 # Streamlit UI
-st.title('Yes Bank Stock Price Predictor')
+st.title('Indian Bank Stocks Price Predictor')
 
 # Sidebar for user input
-ticker = st.sidebar.text_input('Stock Ticker', 'YESBANK.NS')
+stocks = [
+    'YESBANK.NS', 'HDFCBANK.NS', 'ICICIBANK.NS', 'SBIN.NS', 'KOTAKBANK.NS',
+    'AXISBANK.NS', 'BANKBARODA.NS', 'PNB.NS', 'INDUSINDBK.NS', 'IDFCFIRSTB.NS',
+    'FEDERALBNK.NS'
+]
+
+ticker = st.sidebar.selectbox('Select a stock', stocks)
 start_date = st.sidebar.date_input('Start Date', datetime.date(2015,1,1))
 future_date_input = st.sidebar.date_input('Prediction Date', datetime.date(2025,12,25))
 today = datetime.date.today()
