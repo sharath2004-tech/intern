@@ -93,7 +93,7 @@
 # plt.legend()
 # plt.show()
 # Simple authentication
-st.title("Indian Bank Stocks Price Predictor")
+
 
 # Hardcoded credentials (for demo)
 
