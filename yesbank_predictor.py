@@ -106,30 +106,28 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 import datetime
-import streamlit_authenticator as stauth
 
-# ------------------ LOGIN ------------------
-st.title("Indian Bank Stocks Price Predictor")
-USERNAME = "user"
-PASSWORD = "password"
-
+# ------------------ RANDOM USER LOGIN ------------------
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
+    st.session_state.username = None
 
 if not st.session_state.logged_in:
     st.subheader("Sign In")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    username = st.text_input("Enter your username")
     login_btn = st.button("Login")
 
     if login_btn:
-        if username == USERNAME and password == PASSWORD:
+        if username.strip() != "":
             st.session_state.logged_in = True
-            st.success("Logged in successfully!")
+            st.session_state.username = username.strip()
+            st.success(f"Welcome {st.session_state.username}!")
         else:
-            st.error("Invalid username or password")
+            st.error("Please enter a valid username")
 else:
-    # ------------------ APP ------------------
+    st.write(f"Hello, {st.session_state.username}! You can now access the stock predictor app.")
+
+    # ------------------ STOCK PREDICTOR APP ------------------
     stocks = [
         'YESBANK.NS', 'HDFCBANK.NS', 'ICICIBANK.NS', 'SBIN.NS', 'KOTAKBANK.NS',
         'AXISBANK.NS', 'BANKBARODA.NS', 'PNB.NS', 'INDUSINDBK.NS', 'IDFCFIRSTB.NS',
