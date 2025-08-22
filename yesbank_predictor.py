@@ -139,15 +139,18 @@ else:
     future_date_input = st.sidebar.date_input('Prediction Date', datetime.date(2025,12,25))
     today = datetime.date.today()
 
+    # Fetch data
     st.write(f"Fetching data for {ticker}...")
     data = yf.download(ticker, start=start_date, end=today)
 
     if data.empty:
         st.error("No data fetched. Check ticker or date range.")
     else:
-        # Fix for multi-level columns / ensure Close is a Series
+        # Fix for multi-level columns / ensure Close is a DataFrame
         if isinstance(data.columns, pd.MultiIndex):
-            data = data['Close'].copy().to_frame()
+            data = data['Close']
+            if isinstance(data, pd.Series):
+                data = data.to_frame()
 
         data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
         data.dropna(subset=['Close'], inplace=True)
