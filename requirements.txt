@@ -1,7 +1,7 @@
 streamlit
+streamlit-authenticator
 yfinance
 pandas
 numpy
 matplotlib
 scikit-learn
-streamlit-authenticator
