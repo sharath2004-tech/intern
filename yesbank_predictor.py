@@ -150,13 +150,17 @@ if data.empty:
 if 'Close' in data.columns:
     data_close = data['Close']
 else:
-    data_close = data.iloc[:, 0]  # fallback first column
-    if isinstance(data_close, pd.DataFrame):
-        data_close = data_close.iloc[:, 0]  # ensure 1-D Series
+    data_close = data.iloc[:, 0]
+
+if isinstance(data_close, pd.DataFrame):
+    data_close = data_close.iloc[:, 0]
+
+if not isinstance(data_close, pd.Series):
+    data_close = pd.Series(data_close.values)
 
 data_close = pd.to_numeric(data_close, errors='coerce')
 data_close.dropna(inplace=True)
-data_close = data_close.reset_index()  # gives 'Date' and 'Close' columns
+data_close = data_close.reset_index()  # 'Date' and 'Close' columns
 
 # ------------------ SCALE DATA ------------------
 scaler = MinMaxScaler(feature_range=(0,1))
@@ -189,7 +193,6 @@ model.fit(X_train, y_train, epochs=20, batch_size=32, verbose=0)
 # ------------------ FORECAST ------------------
 last_seq = scaled_data[-SEQ_LEN:].reshape(1,SEQ_LEN,1)
 forecast_days = (forecast_date - data_close['Date'].iloc[-1].date()).days
-forecast = []
 
 # Monte Carlo simulation for confidence interval
 num_sim = 50
