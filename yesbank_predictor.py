@@ -153,7 +153,6 @@ def forecast_future_prices_with_ci(model, last_data, n_days):
     lower_ci = []
     upper_ci = []
     data_window = list(last_data[-3:])
-
     for _ in range(n_days):
         X_new = np.array(data_window[-3:]).reshape(1, -1)
         all_tree_preds = np.array([tree.predict(X_new)[0] for tree in model.estimators_])
@@ -165,21 +164,15 @@ def forecast_future_prices_with_ci(model, last_data, n_days):
         data_window.append(y_pred)
     return forecasts, lower_ci, upper_ci
 
-# ------------------ PROCESS EACH SELECTED STOCK ------------------
-st.subheader("Stock Forecasts")
-combined_forecast_plot = plt.figure(figsize=(12,6))
-plt.title("Historical & Forecasted Close Prices")
-plt.xlabel("Date")
-plt.ylabel("Close Price (INR)")
-
+# ------------------ PROCESS EACH STOCK ------------------
 all_forecasts = {}  # for CSV download
 summary_table = []  # for expected return comparison
 
+# Historical plots
 for ticker in selected_stocks:
     st.write(f"### {ticker}")
-    # Fetch data
     data = yf.download(ticker, start=start_date, end=today)
-    if data.empty:
+    if data.empty: 
         st.error(f"No data fetched for {ticker}")
         continue
 
@@ -188,25 +181,11 @@ for ticker in selected_stocks:
         if 'Close' in data.columns.get_level_values(0):
             data_close = data['Close']
         else:
-            st.error(f"Close column not found for {ticker}")
-            continue
-    elif 'Close' in data.columns:
-        data_close = data['Close']
+            data_close = data.iloc[:,0]
     else:
-        data_close = data.iloc[:, 0]
-        data_close = data_close.to_frame(name='Close')
+        data_close = data['Close'] if 'Close' in data.columns else data.iloc[:,0]
 
-    # Numeric type
-    if isinstance(data_close, pd.DataFrame):
-        data_close['Close'] = pd.to_numeric(data_close.iloc[:, 0], errors='coerce')
-    elif isinstance(data_close, pd.Series):
-        data_close = pd.to_numeric(data_close, errors='coerce').to_frame(name='Close')
-    else:
-        st.error(f"Cannot process Close for {ticker}")
-        continue
-
-    data_close.dropna(subset=['Close'], inplace=True)
-    data_close.reset_index(inplace=True)
+    data_close = pd.to_numeric(data_close, errors='coerce').dropna().to_frame(name='Close').reset_index()
     data = data_close.copy()
 
     # Last close
@@ -214,7 +193,7 @@ for ticker in selected_stocks:
     last_close_date = data['Date'].iloc[-1]
     st.write(f"Last Close: Date {last_close_date.date()}, Price ₹{last_close:.2f}")
 
-    # ------------------ PLOT HISTORICAL CLOSE ------------------
+    # Historical plot
     st.subheader(f'{ticker} Historical Close Price')
     plt.figure(figsize=(10,4))
     plt.plot(data['Date'], data['Close'], label='Close Price')
@@ -261,10 +240,8 @@ for ticker in selected_stocks:
     })
 
     st.dataframe(forecast_df)
-    plt.plot(forecast_dates, forecasts, linestyle='--', label=f'{ticker} Forecast')
-    plt.fill_between(forecast_dates, lower_ci, upper_ci, alpha=0.2)
 
-    # Save for CSV download
+    # Save for combined plot
     all_forecasts[ticker] = forecast_df
 
     # Expected return
@@ -276,10 +253,19 @@ for ticker in selected_stocks:
         'Expected_Return_%': expected_return
     })
 
-# ------------------ SHOW COMBINED PLOT ------------------
-plt.legend()
-st.subheader("Combined Forecast Plot")
-st.pyplot(combined_forecast_plot)
+# ------------------ COMBINED FORECAST PLOT ------------------
+st.subheader("Combined Forecasted Prices with 95% CI")
+combined_forecast_fig, ax = plt.subplots(figsize=(12,6))
+ax.set_title("Forecasted Close Prices")
+ax.set_xlabel("Date")
+ax.set_ylabel("Close Price (INR)")
+
+for ticker, df_forecast in all_forecasts.items():
+    ax.plot(df_forecast['Date'], df_forecast['Forecasted_Close'], linestyle='--', label=f'{ticker} Forecast')
+    ax.fill_between(df_forecast['Date'], df_forecast['Lower_CI'], df_forecast['Upper_CI'], alpha=0.2)
+
+ax.legend()
+st.pyplot(combined_forecast_fig)
 
 # ------------------ SUMMARY TABLE ------------------
 if summary_table:
