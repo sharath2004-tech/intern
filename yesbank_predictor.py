@@ -168,7 +168,6 @@ def forecast_future_prices_with_ci(model, last_data, n_days):
 all_forecasts = {}  # for CSV download
 summary_table = []  # for expected return comparison
 
-# Historical plots
 for ticker in selected_stocks:
     st.write(f"### {ticker}")
     data = yf.download(ticker, start=start_date, end=today)
@@ -176,7 +175,7 @@ for ticker in selected_stocks:
         st.error(f"No data fetched for {ticker}")
         continue
 
-    # Handle Close column
+    # ------------------ SAFE CLOSE COLUMN HANDLING ------------------
     if isinstance(data.columns, pd.MultiIndex):
         if 'Close' in data.columns.get_level_values(0):
             data_close = data['Close']
@@ -185,15 +184,31 @@ for ticker in selected_stocks:
     else:
         data_close = data['Close'] if 'Close' in data.columns else data.iloc[:,0]
 
-    data_close = pd.to_numeric(data_close, errors='coerce').dropna().to_frame(name='Close').reset_index()
-    data = data_close.copy()
+    # Ensure a Series and numeric
+    if isinstance(data_close, pd.DataFrame):
+        close_series = data_close.iloc[:,0]
+    else:
+        close_series = data_close
 
-    # Last close
+    close_series = pd.to_numeric(close_series, errors='coerce')
+    close_series.dropna(inplace=True)
+
+    # Reconstruct DataFrame with Date and Close
+    data = pd.DataFrame({
+        'Date': data.index if hasattr(data.index, 'date') else data.index,
+        'Close': close_series.values
+    }).reset_index(drop=True)
+
+    if data.empty:
+        st.warning(f"No valid Close prices for {ticker}")
+        continue
+
+    # ------------------ LAST CLOSE ------------------
     last_close = data['Close'].iloc[-1]
     last_close_date = data['Date'].iloc[-1]
     st.write(f"Last Close: Date {last_close_date.date()}, Price ₹{last_close:.2f}")
 
-    # Historical plot
+    # ------------------ HISTORICAL CLOSE PLOT ------------------
     st.subheader(f'{ticker} Historical Close Price')
     plt.figure(figsize=(10,4))
     plt.plot(data['Date'], data['Close'], label='Close Price')
@@ -203,7 +218,7 @@ for ticker in selected_stocks:
     plt.legend()
     st.pyplot(plt)
 
-    # Feature engineering
+    # ------------------ FEATURE ENGINEERING ------------------
     if len(data) < 4:
         st.warning(f"Not enough data for {ticker} to forecast.")
         continue
@@ -222,7 +237,7 @@ for ticker in selected_stocks:
 
     st.write('Model Performance: MSE:', mean_squared_error(y_test, y_pred), ', R2:', r2_score(y_test, y_pred))
 
-    # Forecast
+    # ------------------ FORECAST ------------------
     max_forecast_days = (future_date_input - data['Date'].iloc[-1].date()).days
     if max_forecast_days < 1:
         st.warning(f"Prediction date for {ticker} is before or equal to last available date.")
@@ -241,10 +256,9 @@ for ticker in selected_stocks:
 
     st.dataframe(forecast_df)
 
-    # Save for combined plot
     all_forecasts[ticker] = forecast_df
 
-    # Expected return
+    # ------------------ EXPECTED RETURN ------------------
     expected_return = (forecasts[-1] - last_close) / last_close * 100
     summary_table.append({
         'Stock': ticker,
@@ -253,16 +267,28 @@ for ticker in selected_stocks:
         'Expected_Return_%': expected_return
     })
 
-# ------------------ COMBINED FORECAST PLOT ------------------
+# ------------------ COMBINED FORECAST PLOT WITH COLORS AND HIGHLIGHT ------------------
 st.subheader("Combined Forecasted Prices with 95% CI")
 combined_forecast_fig, ax = plt.subplots(figsize=(12,6))
 ax.set_title("Forecasted Close Prices")
 ax.set_xlabel("Date")
 ax.set_ylabel("Close Price (INR)")
 
+# Define unique colors for each stock
+colors = plt.cm.tab10.colors  # up to 10 unique colors
+ticker_colors = {ticker: colors[i % len(colors)] for i, ticker in enumerate(all_forecasts.keys())}
+
+# Find stock with highest expected return
+if summary_table:
+    max_return_stock = max(summary_table, key=lambda x: x['Expected_Return_%'])['Stock']
+else:
+    max_return_stock = None
+
 for ticker, df_forecast in all_forecasts.items():
-    ax.plot(df_forecast['Date'], df_forecast['Forecasted_Close'], linestyle='--', label=f'{ticker} Forecast')
-    ax.fill_between(df_forecast['Date'], df_forecast['Lower_CI'], df_forecast['Upper_CI'], alpha=0.2)
+    color = ticker_colors[ticker]
+    linewidth = 3 if ticker == max_return_stock else 1.5  # highlight top stock
+    ax.plot(df_forecast['Date'], df_forecast['Forecasted_Close'], linestyle='--', color=color, linewidth=linewidth, label=f'{ticker} Forecast')
+    ax.fill_between(df_forecast['Date'], df_forecast['Lower_CI'], df_forecast['Upper_CI'], color=color, alpha=0.2)
 
 ax.legend()
 st.pyplot(combined_forecast_fig)
