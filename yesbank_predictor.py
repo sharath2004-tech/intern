@@ -164,7 +164,7 @@ if not isinstance(data_close, pd.Series):
 data_close = pd.to_numeric(data_close, errors='coerce')
 data_close.dropna(inplace=True)
 data_close = data_close.reset_index()
-data_close.columns = ['Date', 'Close']  # fix KeyError
+data_close.columns = ['Date', 'Close']
 
 # ------------------ SCALE DATA ------------------
 scaler = MinMaxScaler(feature_range=(0,1))
@@ -186,9 +186,10 @@ split = int(len(X)*0.8)
 X_train, X_test = X[:split], X[split:]
 y_train, y_test = y[:split], y[split:]
 
-# ------------------ TRAIN LSTM (using st.session_state) ------------------
-tf.keras.backend.clear_session()  # clear backend to avoid errors
+# ------------------ CLEAR KERAS SESSION ------------------
+tf.keras.backend.clear_session()  # prevents 'NoneType pop' error
 
+# ------------------ TRAIN LSTM ------------------
 if 'model' not in st.session_state:
     model = Sequential()
     model.add(LSTM(50, return_sequences=True, input_shape=(X_train.shape[1],1)))
