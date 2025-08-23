@@ -107,6 +107,7 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 import datetime
+import tensorflow as tf
 
 # ------------------ USER LOGIN ------------------
 if 'logged_in' not in st.session_state:
@@ -126,7 +127,6 @@ if not st.session_state.logged_in:
         else:
             st.error("Please enter a valid username")
 
-    # Stop execution until login is successful
     if not st.session_state.logged_in:
         st.stop()
 
@@ -156,19 +156,15 @@ if 'Close' in data.columns:
 else:
     data_close = data.iloc[:, 0]
 
-# Ensure 1-D Series
 if isinstance(data_close, pd.DataFrame):
     data_close = data_close.iloc[:, 0]
 if not isinstance(data_close, pd.Series):
     data_close = pd.Series(data_close.values)
 
-# Convert to numeric and drop NaNs
 data_close = pd.to_numeric(data_close, errors='coerce')
 data_close.dropna(inplace=True)
-
-# Reset index and rename columns explicitly
 data_close = data_close.reset_index()
-data_close.columns = ['Date', 'Close']  # Explicit fix for KeyError
+data_close.columns = ['Date', 'Close']  # fix KeyError
 
 # ------------------ SCALE DATA ------------------
 scaler = MinMaxScaler(feature_range=(0,1))
@@ -186,23 +182,28 @@ SEQ_LEN = 60
 X, y = create_sequences(scaled_data, SEQ_LEN)
 X = X.reshape((X.shape[0], X.shape[1], 1))
 
-# ------------------ TRAIN LSTM ------------------
 split = int(len(X)*0.8)
 X_train, X_test = X[:split], X[split:]
 y_train, y_test = y[:split], y[split:]
 
-model = Sequential()
-model.add(LSTM(50, return_sequences=True, input_shape=(X_train.shape[1],1)))
-model.add(LSTM(50))
-model.add(Dense(1))
-model.compile(optimizer='adam', loss='mean_squared_error')
-model.fit(X_train, y_train, epochs=20, batch_size=32, verbose=0)
+# ------------------ TRAIN LSTM (using st.session_state) ------------------
+tf.keras.backend.clear_session()  # clear backend to avoid errors
+
+if 'model' not in st.session_state:
+    model = Sequential()
+    model.add(LSTM(50, return_sequences=True, input_shape=(X_train.shape[1],1)))
+    model.add(LSTM(50))
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    model.fit(X_train, y_train, epochs=20, batch_size=32, verbose=0)
+    st.session_state.model = model
+else:
+    model = st.session_state.model
 
 # ------------------ FORECAST ------------------
 last_seq = scaled_data[-SEQ_LEN:].reshape(1,SEQ_LEN,1)
 forecast_days = (forecast_date - data_close['Date'].iloc[-1].date()).days
 
-# Monte Carlo simulation for confidence interval
 num_sim = 50
 simulations = []
 
@@ -211,7 +212,7 @@ for _ in range(num_sim):
     sim = []
     for _ in range(forecast_days):
         pred = model.predict(temp_seq, verbose=0)[0,0]
-        pred += np.random.normal(0, 0.002)  # small noise
+        pred += np.random.normal(0, 0.002)  # small noise for CI
         sim.append(pred)
         temp_seq = np.append(temp_seq[:,1:,:], [[[pred]]], axis=1)
     simulations.append(sim)
