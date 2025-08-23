@@ -214,8 +214,15 @@ for ticker in selected_stocks:
     last_close_date = data['Date'].iloc[-1]
     st.write(f"Last Close: Date {last_close_date.date()}, Price ₹{last_close:.2f}")
 
-    # Plot historical
-    plt.plot(data['Date'], data['Close'], label=f'{ticker} Historical')
+    # ------------------ PLOT HISTORICAL CLOSE ------------------
+    st.subheader(f'{ticker} Historical Close Price')
+    plt.figure(figsize=(10,4))
+    plt.plot(data['Date'], data['Close'], label='Close Price')
+    plt.xlabel('Date')
+    plt.ylabel('Close Price (INR)')
+    plt.title(f'{ticker} Historical Close Price')
+    plt.legend()
+    st.pyplot(plt)
 
     # Feature engineering
     if len(data) < 4:
@@ -260,7 +267,7 @@ for ticker in selected_stocks:
     # Save for CSV download
     all_forecasts[ticker] = forecast_df
 
-    # Calculate expected return
+    # Expected return
     expected_return = (forecasts[-1] - last_close) / last_close * 100
     summary_table.append({
         'Stock': ticker,
@@ -271,6 +278,7 @@ for ticker in selected_stocks:
 
 # ------------------ SHOW COMBINED PLOT ------------------
 plt.legend()
+st.subheader("Combined Forecast Plot")
 st.pyplot(combined_forecast_plot)
 
 # ------------------ SUMMARY TABLE ------------------
