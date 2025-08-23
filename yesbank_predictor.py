@@ -106,8 +106,11 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
-import datetime
 import tensorflow as tf
+import datetime
+
+# ------------------ CLEAR KERAS SESSION ------------------
+tf.keras.backend.clear_session()
 
 # ------------------ USER LOGIN ------------------
 if 'logged_in' not in st.session_state:
@@ -118,15 +121,13 @@ if not st.session_state.logged_in:
     st.subheader("Sign In")
     username_input = st.text_input("Enter your username")
     login_btn = st.button("Login")
-
     if login_btn:
-        if username_input.strip() != "":
+        if username_input.strip():
             st.session_state.logged_in = True
             st.session_state.username = username_input.strip()
             st.success(f"Welcome {st.session_state.username}!")
         else:
             st.error("Please enter a valid username")
-
     if not st.session_state.logged_in:
         st.stop()
 
@@ -156,11 +157,6 @@ if 'Close' in data.columns:
 else:
     data_close = data.iloc[:, 0]
 
-if isinstance(data_close, pd.DataFrame):
-    data_close = data_close.iloc[:, 0]
-if not isinstance(data_close, pd.Series):
-    data_close = pd.Series(data_close.values)
-
 data_close = pd.to_numeric(data_close, errors='coerce')
 data_close.dropna(inplace=True)
 data_close = data_close.reset_index()
@@ -171,38 +167,35 @@ scaler = MinMaxScaler(feature_range=(0,1))
 scaled_data = scaler.fit_transform(data_close['Close'].values.reshape(-1,1))
 
 # ------------------ CREATE SEQUENCES ------------------
-def create_sequences(data, seq_len=60):
+SEQ_LEN = 60
+def create_sequences(data, seq_len=SEQ_LEN):
     X, y = [], []
     for i in range(seq_len, len(data)):
-        X.append(data[i-seq_len:i, 0])
+        X.append(data[i-seq_len:i,0])
         y.append(data[i,0])
     return np.array(X), np.array(y)
 
-SEQ_LEN = 60
-X, y = create_sequences(scaled_data, SEQ_LEN)
+X, y = create_sequences(scaled_data)
 X = X.reshape((X.shape[0], X.shape[1], 1))
 
 split = int(len(X)*0.8)
 X_train, X_test = X[:split], X[split:]
 y_train, y_test = y[:split], y[split:]
 
-# ------------------ CLEAR KERAS SESSION ------------------
-tf.keras.backend.clear_session()  # prevents 'NoneType pop' error
-
 # ------------------ TRAIN LSTM ------------------
-if 'model' not in st.session_state:
+if 'lstm_model' not in st.session_state:
     model = Sequential()
     model.add(LSTM(50, return_sequences=True, input_shape=(X_train.shape[1],1)))
     model.add(LSTM(50))
     model.add(Dense(1))
     model.compile(optimizer='adam', loss='mean_squared_error')
     model.fit(X_train, y_train, epochs=20, batch_size=32, verbose=0)
-    st.session_state.model = model
+    st.session_state.lstm_model = model
 else:
-    model = st.session_state.model
+    model = st.session_state.lstm_model
 
 # ------------------ FORECAST ------------------
-last_seq = scaled_data[-SEQ_LEN:].reshape(1,SEQ_LEN,1)
+last_seq = scaled_data[-SEQ_LEN:].reshape(1, SEQ_LEN, 1)
 forecast_days = (forecast_date - data_close['Date'].iloc[-1].date()).days
 
 num_sim = 50
@@ -213,18 +206,17 @@ for _ in range(num_sim):
     sim = []
     for _ in range(forecast_days):
         pred = model.predict(temp_seq, verbose=0)[0,0]
-        pred += np.random.normal(0, 0.002)  # small noise for CI
+        pred += np.random.normal(0,0.002)
         sim.append(pred)
         temp_seq = np.append(temp_seq[:,1:,:], [[[pred]]], axis=1)
     simulations.append(sim)
 
 simulations = np.array(simulations)
 forecast_mean = scaler.inverse_transform(simulations.mean(axis=0).reshape(-1,1)).flatten()
-forecast_lower = scaler.inverse_transform(np.percentile(simulations, 2.5, axis=0).reshape(-1,1)).flatten()
-forecast_upper = scaler.inverse_transform(np.percentile(simulations, 97.5, axis=0).reshape(-1,1)).flatten()
+forecast_lower = scaler.inverse_transform(np.percentile(simulations,2.5,axis=0).reshape(-1,1)).flatten()
+forecast_upper = scaler.inverse_transform(np.percentile(simulations,97.5,axis=0).reshape(-1,1)).flatten()
 
-forecast_dates = pd.bdate_range(start=data_close['Date'].iloc[-1].date() + datetime.timedelta(days=1), periods=forecast_days)
-
+forecast_dates = pd.bdate_range(start=data_close['Date'].iloc[-1].date()+datetime.timedelta(days=1), periods=forecast_days)
 forecast_df = pd.DataFrame({
     'Date': forecast_dates,
     'Forecasted_Close': forecast_mean,
@@ -257,6 +249,6 @@ st.dataframe(forecast_df)
 # ------------------ LAST CLOSE AND EXPECTED RETURN ------------------
 last_close = data_close['Close'].iloc[-1]
 st.write(f"Last Close: ₹{last_close:.2f}")
-expected_return = (forecast_mean[-1] - last_close)/last_close*100
 st.write(f"Forecasted Price on {forecast_date}: ₹{forecast_mean[-1]:.2f}")
+expected_return = (forecast_mean[-1]-last_close)/last_close*100
 st.write(f"Expected Return: {expected_return:.2f}%")
