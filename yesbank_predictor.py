@@ -111,20 +111,24 @@ import datetime
 # ------------------ USER LOGIN ------------------
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
-    st.session_state.username = None
+    st.session_state.username = ""
 
 if not st.session_state.logged_in:
     st.subheader("Sign In")
-    username = st.text_input("Enter your username")
+    username_input = st.text_input("Enter your username")
     login_btn = st.button("Login")
+
     if login_btn:
-        if username.strip() != "":
+        if username_input.strip() != "":
             st.session_state.logged_in = True
-            st.session_state.username = username.strip()
+            st.session_state.username = username_input.strip()
             st.success(f"Welcome {st.session_state.username}!")
         else:
             st.error("Please enter a valid username")
-    st.stop()
+
+    # Stop execution until login is successful
+    if not st.session_state.logged_in:
+        st.stop()
 
 st.write(f"Hello, {st.session_state.username}! Access the stock predictor below.")
 
@@ -164,7 +168,7 @@ data_close.dropna(inplace=True)
 
 # Reset index and rename columns explicitly
 data_close = data_close.reset_index()
-data_close.columns = ['Date', 'Close']  # <-- Key fix
+data_close.columns = ['Date', 'Close']  # Explicit fix for KeyError
 
 # ------------------ SCALE DATA ------------------
 scaler = MinMaxScaler(feature_range=(0,1))
@@ -254,4 +258,3 @@ st.write(f"Last Close: ₹{last_close:.2f}")
 expected_return = (forecast_mean[-1] - last_close)/last_close*100
 st.write(f"Forecasted Price on {forecast_date}: ₹{forecast_mean[-1]:.2f}")
 st.write(f"Expected Return: {expected_return:.2f}%")
-
