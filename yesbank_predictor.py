@@ -129,98 +129,99 @@ if not st.session_state.logged_in:
 
 st.write(f"Hello, {st.session_state.username}! You can now access the stock predictor app.")
 
-# ------------------ STOCK PREDICTOR APP ------------------
+# ------------------ STOCK SELECTION ------------------
 stocks = [
     'YESBANK.NS', 'HDFCBANK.NS', 'ICICIBANK.NS', 'SBIN.NS', 'KOTAKBANK.NS',
     'AXISBANK.NS', 'BANKBARODA.NS', 'PNB.NS', 'INDUSINDBK.NS', 'IDFCFIRSTB.NS',
     'FEDERALBNK.NS'
 ]
 
-ticker = st.sidebar.selectbox('Select a stock', stocks)
+stock1 = st.sidebar.selectbox("Select first stock", stocks, index=0)
+stock2 = st.sidebar.selectbox("Select second stock", stocks, index=1)
+
 start_date = st.sidebar.date_input('Start Date', datetime.date(2015,1,1))
 future_date_input = st.sidebar.date_input('Prediction Date', datetime.date(2025,12,25))
 today = datetime.date.today()
 
 # ------------------ FETCH DATA ------------------
-st.write(f"Fetching data for {ticker}...")
-data = yf.download(ticker, start=start_date, end=today)
+@st.cache_data
+def fetch_data(ticker):
+    df = yf.download(ticker, start=start_date, end=today)
+    if df.empty:
+        return None
+    if 'Close' in df.columns:
+        close = df['Close']
+    else:
+        close = df.iloc[:, 0]
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+    if not isinstance(close, pd.Series):
+        close = pd.Series(close.values.flatten())
+    close = pd.to_numeric(close, errors='coerce').dropna()
+    close = close.reset_index()
+    close.columns = ['Date', 'Close']
+    return close
 
-if data.empty:
-    st.error("No data fetched. Check ticker or date range.")
+data1 = fetch_data(stock1)
+data2 = fetch_data(stock2)
+
+if data1 is None or data2 is None:
+    st.error("Could not fetch data for one of the stocks.")
     st.stop()
 
-# ------------------ SAFE CLOSE SERIES ------------------
-if 'Close' in data.columns:
-    data_close = data['Close']  # already a Series
-else:
-    data_close = data.iloc[:, 0]  # fallback to first column
-    if isinstance(data_close, pd.DataFrame):
-        data_close = data_close.iloc[:, 0]  # ensure 1-D Series
-
-# Ensure 1-D Series
-if not isinstance(data_close, pd.Series):
-    data_close = pd.Series(data_close.values.flatten())
-
-# Convert to numeric and drop NaNs
-data_close = pd.to_numeric(data_close, errors='coerce')
-data_close.dropna(inplace=True)
-
-# Reset index to get Date column
-data_close = data_close.reset_index()
-data_close.columns = ['Date', 'Close']
-data = data_close.copy()
-
-# ------------------ PLOT HISTORICAL CLOSE PRICE ------------------
-st.subheader('Historical Close Price')
+# ------------------ HISTORICAL PLOT ------------------
+st.subheader("Historical Close Prices Comparison")
 plt.figure(figsize=(12,6))
-plt.plot(data['Date'], data['Close'], label='Close Price')
-plt.xlabel('Date')
-plt.ylabel('Close Price (INR)')
-plt.title(f'{ticker} Historical Close Price')
+plt.plot(data1['Date'], data1['Close'], label=stock1)
+plt.plot(data2['Date'], data2['Close'], label=stock2)
+plt.xlabel("Date")
+plt.ylabel("Close Price (INR)")
 plt.legend()
 st.pyplot(plt)
 
-# ------------------ FEATURE ENGINEERING ------------------
-if len(data) < 4:
-    st.error("Not enough data to create lag features.")
-else:
-    data['Close_Lag1'] = data['Close'].shift(1)
-    data['Close_Lag2'] = data['Close'].shift(2)
-    data['Close_Lag3'] = data['Close'].shift(3)
-    data.dropna(inplace=True)
+# ------------------ RANDOM FOREST FORECAST FUNCTION ------------------
+def forecast_stock(data, future_date):
+    if len(data) < 4:
+        return None, None
+    df = data.copy()
+    df['Lag1'] = df['Close'].shift(1)
+    df['Lag2'] = df['Close'].shift(2)
+    df['Lag3'] = df['Close'].shift(3)
+    df.dropna(inplace=True)
 
-    X = data[['Close_Lag1', 'Close_Lag2', 'Close_Lag3']]
-    y = data['Close']
-
+    X = df[['Lag1','Lag2','Lag3']]
+    y = df['Close']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
     model = RandomForestRegressor(n_estimators=200, random_state=42)
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
 
-    st.subheader('Model Performance on Test Set')
-    st.write('MSE:', mean_squared_error(y_test, y_pred))
-    st.write('R2 Score:', r2_score(y_test, y_pred))
-
-    # Predict future price
-    last_data = data.tail(3)['Close'].values
+    last_data = df.tail(3)['Close'].values
     future_features = np.array([last_data[-1], last_data[-2], last_data[-3]]).reshape(1,-1)
     future_price = model.predict(future_features)[0]
 
-    st.subheader(f'Predicted Close Price for {future_date_input}')
-    st.write(f"₹{future_price:.2f}")
+    return future_price, model
 
-    # ------------------ PLOT HISTORICAL + PREDICTED ------------------
-    st.subheader('Historical & Predicted Price')
+# ------------------ FORECAST AND DISPLAY ------------------
+st.subheader(f"Forecasted Prices on {future_date_input}")
+
+forecast1, model1 = forecast_stock(data1, future_date_input)
+forecast2, model2 = forecast_stock(data2, future_date_input)
+
+if forecast1 is not None and forecast2 is not None:
+    st.write(f"{stock1}: ₹{forecast1:.2f} (Last Close: ₹{data1['Close'].iloc[-1]:.2f})")
+    st.write(f"{stock2}: ₹{forecast2:.2f} (Last Close: ₹{data2['Close'].iloc[-1]:.2f})")
+
+    # Plot last 100 days + forecast
     plt.figure(figsize=(12,6))
-    plt.plot(data['Date'], data['Close'], label='Historical Close Price')
-    plt.scatter(future_date_input, future_price, color='red', label=f'Predicted {future_date_input}', s=100)
-    plt.xlabel('Date')
-    plt.ylabel('Close Price (INR)')
+    plt.plot(data1['Date'].iloc[-100:], data1['Close'].iloc[-100:], label=f'{stock1} Historical')
+    plt.plot(data2['Date'].iloc[-100:], data2['Close'].iloc[-100:], label=f'{stock2} Historical')
+    plt.scatter(future_date_input, forecast1, color='red', label=f'{stock1} Forecast', s=100)
+    plt.scatter(future_date_input, forecast2, color='green', label=f'{stock2} Forecast', s=100)
+    plt.xlabel("Date")
+    plt.ylabel("Close Price (INR)")
     plt.legend()
     st.pyplot(plt)
-
-    # ------------------ LAST CLOSE ------------------
-    last_close = data['Close'].iloc[-1]
-    st.write(f"Last historical close price: ₹{last_close:.2f}")
-
+else:
+    st.warning("Not enough data to forecast one or both stocks.")
