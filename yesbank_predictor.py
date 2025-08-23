@@ -153,9 +153,11 @@ if data.empty:
 
 # ------------------ SAFE CLOSE SERIES ------------------
 if 'Close' in data.columns:
-    data_close = data['Close']
+    data_close = data['Close']   # Series
 else:
     data_close = data.iloc[:, 0]
+    if isinstance(data_close, pd.DataFrame):
+        data_close = data_close.iloc[:, 0]
 
 data_close = pd.to_numeric(data_close, errors='coerce')
 data_close.dropna(inplace=True)
@@ -206,7 +208,7 @@ for _ in range(num_sim):
     sim = []
     for _ in range(forecast_days):
         pred = model.predict(temp_seq, verbose=0)[0,0]
-        pred += np.random.normal(0,0.002)
+        pred += np.random.normal(0,0.002)  # small noise for Monte Carlo
         sim.append(pred)
         temp_seq = np.append(temp_seq[:,1:,:], [[[pred]]], axis=1)
     simulations.append(sim)
