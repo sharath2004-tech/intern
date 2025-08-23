@@ -105,10 +105,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score
 import datetime
 
-# ------------------ RANDOM USER LOGIN ------------------
+# ------------------ LOGIN ------------------
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
@@ -138,7 +137,6 @@ stocks = [
 
 stock1 = st.sidebar.selectbox("Select first stock", stocks, index=0)
 stock2 = st.sidebar.selectbox("Select second stock", stocks, index=1)
-
 start_date = st.sidebar.date_input('Start Date', datetime.date(2015,1,1))
 future_date_input = st.sidebar.date_input('Prediction Date', datetime.date(2025,12,25))
 today = datetime.date.today()
@@ -153,11 +151,7 @@ def fetch_data(ticker):
         close = df['Close']
     else:
         close = df.iloc[:, 0]
-        if isinstance(close, pd.DataFrame):
-            close = close.iloc[:, 0]
-    if not isinstance(close, pd.Series):
-        close = pd.Series(close.values.flatten())
-    close = pd.to_numeric(close, errors='coerce').dropna()
+    close = pd.Series(pd.to_numeric(close, errors='coerce')).dropna()
     close = close.reset_index()
     close.columns = ['Date', 'Close']
     return close
@@ -169,18 +163,25 @@ if data1 is None or data2 is None:
     st.error("Could not fetch data for one of the stocks.")
     st.stop()
 
-# ------------------ HISTORICAL PLOT ------------------
-st.subheader("Historical Close Prices Comparison")
-plt.figure(figsize=(12,6))
-plt.plot(data1['Date'], data1['Close'], label=stock1)
-plt.plot(data2['Date'], data2['Close'], label=stock2)
+# ------------------ HISTORICAL PLOTS ------------------
+st.subheader(f"Historical Close Price: {stock1}")
+plt.figure(figsize=(12,5))
+plt.plot(data1['Date'], data1['Close'], label=stock1, color='blue')
+plt.xlabel("Date")
+plt.ylabel("Close Price (INR)")
+plt.legend()
+st.pyplot(plt)
+
+st.subheader(f"Historical Close Price: {stock2}")
+plt.figure(figsize=(12,5))
+plt.plot(data2['Date'], data2['Close'], label=stock2, color='green')
 plt.xlabel("Date")
 plt.ylabel("Close Price (INR)")
 plt.legend()
 st.pyplot(plt)
 
 # ------------------ RANDOM FOREST FORECAST FUNCTION ------------------
-def forecast_stock(data, future_date):
+def forecast_stock(data):
     if len(data) < 4:
         return None, None
     df = data.copy()
@@ -195,33 +196,33 @@ def forecast_stock(data, future_date):
 
     model = RandomForestRegressor(n_estimators=200, random_state=42)
     model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
 
     last_data = df.tail(3)['Close'].values
     future_features = np.array([last_data[-1], last_data[-2], last_data[-3]]).reshape(1,-1)
     future_price = model.predict(future_features)[0]
-
     return future_price, model
 
-# ------------------ FORECAST AND DISPLAY ------------------
-st.subheader(f"Forecasted Prices on {future_date_input}")
+# ------------------ FORECAST ------------------
+forecast1, _ = forecast_stock(data1)
+forecast2, _ = forecast_stock(data2)
 
-forecast1, model1 = forecast_stock(data1, future_date_input)
-forecast2, model2 = forecast_stock(data2, future_date_input)
+# ------------------ SEPARATE FORECAST PLOTS ------------------
+st.subheader(f"Forecasted Close Price: {stock1}")
+plt.figure(figsize=(12,5))
+plt.plot(data1['Date'].iloc[-100:], data1['Close'].iloc[-100:], label=f'{stock1} Historical', color='blue')
+plt.scatter(future_date_input, forecast1, color='red', label=f'{stock1} Forecast', s=100)
+plt.xlabel("Date")
+plt.ylabel("Close Price (INR)")
+plt.legend()
+st.pyplot(plt)
+st.write(f"Forecasted {stock1} Close Price on {future_date_input}: ₹{forecast1:.2f}")
 
-if forecast1 is not None and forecast2 is not None:
-    st.write(f"{stock1}: ₹{forecast1:.2f} (Last Close: ₹{data1['Close'].iloc[-1]:.2f})")
-    st.write(f"{stock2}: ₹{forecast2:.2f} (Last Close: ₹{data2['Close'].iloc[-1]:.2f})")
-
-    # Plot last 100 days + forecast
-    plt.figure(figsize=(12,6))
-    plt.plot(data1['Date'].iloc[-100:], data1['Close'].iloc[-100:], label=f'{stock1} Historical')
-    plt.plot(data2['Date'].iloc[-100:], data2['Close'].iloc[-100:], label=f'{stock2} Historical')
-    plt.scatter(future_date_input, forecast1, color='red', label=f'{stock1} Forecast', s=100)
-    plt.scatter(future_date_input, forecast2, color='green', label=f'{stock2} Forecast', s=100)
-    plt.xlabel("Date")
-    plt.ylabel("Close Price (INR)")
-    plt.legend()
-    st.pyplot(plt)
-else:
-    st.warning("Not enough data to forecast one or both stocks.")
+st.subheader(f"Forecasted Close Price: {stock2}")
+plt.figure(figsize=(12,5))
+plt.plot(data2['Date'].iloc[-100:], data2['Close'].iloc[-100:], label=f'{stock2} Historical', color='green')
+plt.scatter(future_date_input, forecast2, color='orange', label=f'{stock2} Forecast', s=100)
+plt.xlabel("Date")
+plt.ylabel("Close Price (INR)")
+plt.legend()
+st.pyplot(plt)
+st.write(f"Forecasted {stock2} Close Price on {future_date_input}: ₹{forecast2:.2f}")
