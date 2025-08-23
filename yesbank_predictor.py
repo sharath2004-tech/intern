@@ -152,15 +152,19 @@ if 'Close' in data.columns:
 else:
     data_close = data.iloc[:, 0]
 
+# Ensure 1-D Series
 if isinstance(data_close, pd.DataFrame):
     data_close = data_close.iloc[:, 0]
-
 if not isinstance(data_close, pd.Series):
     data_close = pd.Series(data_close.values)
 
+# Convert to numeric and drop NaNs
 data_close = pd.to_numeric(data_close, errors='coerce')
 data_close.dropna(inplace=True)
-data_close = data_close.reset_index()  # 'Date' and 'Close' columns
+
+# Reset index and rename columns explicitly
+data_close = data_close.reset_index()
+data_close.columns = ['Date', 'Close']  # <-- Key fix
 
 # ------------------ SCALE DATA ------------------
 scaler = MinMaxScaler(feature_range=(0,1))
@@ -250,3 +254,4 @@ st.write(f"Last Close: ₹{last_close:.2f}")
 expected_return = (forecast_mean[-1] - last_close)/last_close*100
 st.write(f"Forecasted Price on {forecast_date}: ₹{forecast_mean[-1]:.2f}")
 st.write(f"Expected Return: {expected_return:.2f}%")
+
