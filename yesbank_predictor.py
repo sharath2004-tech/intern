@@ -147,21 +147,41 @@ if len(selected_stocks) == 0:
     st.warning("Please select at least one stock.")
     st.stop()
 
-# ------------------ FORECAST FUNCTION WITH CI ------------------
-def forecast_future_prices_with_ci(model, last_data, n_days):
+# ------------------ FORECAST FUNCTION WITH ALL FEATURES ------------------
+def forecast_future_prices_with_ci(model, last_features_df, n_days):
     forecasts = []
     lower_ci = []
     upper_ci = []
-    data_window = list(last_data)
+    future_df = last_features_df.copy()
+    
     for _ in range(n_days):
-        X_new = np.array(data_window[-7:]).reshape(1, -1)  # 7 lag features
+        X_new = future_df.iloc[-1].values.reshape(1, -1)  # full 11 features
         all_tree_preds = np.array([tree.predict(X_new)[0] for tree in model.estimators_])
         y_pred = np.mean(all_tree_preds)
         std_pred = np.std(all_tree_preds)
         forecasts.append(y_pred)
         lower_ci.append(y_pred - 1.96 * std_pred)
         upper_ci.append(y_pred + 1.96 * std_pred)
-        data_window.append(y_pred)
+        
+        # Build new row
+        new_row = {}
+        # Shift lag features
+        for i in range(7,0,-1):
+            if i == 1:
+                new_row[f'Close_Lag{i}'] = y_pred
+            else:
+                new_row[f'Close_Lag{i}'] = future_df.iloc[-1][f'Close_Lag{i-1}']
+        # Update moving averages
+        last_closes_3 = [new_row[f'Close_Lag{i}'] for i in range(1,4)]
+        new_row['MA3'] = np.mean(last_closes_3)
+        last_closes_5 = [new_row[f'Close_Lag{i}'] for i in range(1,6)]
+        new_row['MA5'] = np.mean(last_closes_5)
+        # Returns
+        new_row['Return1'] = (new_row['Close_Lag1'] - future_df.iloc[-1]['Close_Lag1']) / future_df.iloc[-1]['Close_Lag1']
+        new_row['Return3'] = (new_row['Close_Lag1'] - future_df.iloc[-1]['Close_Lag3']) / future_df.iloc[-1]['Close_Lag3']
+        
+        future_df = pd.concat([future_df, pd.DataFrame([new_row])], ignore_index=True)
+    
     return forecasts, lower_ci, upper_ci
 
 # ------------------ PROCESS EACH STOCK ------------------
@@ -175,27 +195,11 @@ for ticker in selected_stocks:
         st.error(f"No data fetched for {ticker}")
         continue
 
-    # ------------------ SAFE CLOSE COLUMN HANDLING ------------------
-    if isinstance(data.columns, pd.MultiIndex):
-        if 'Close' in data.columns.get_level_values(0):
-            data_close = data['Close']
-        else:
-            data_close = data.iloc[:,0]
-    else:
-        data_close = data['Close'] if 'Close' in data.columns else data.iloc[:,0]
-
-    if isinstance(data_close, pd.DataFrame):
-        close_series = data_close.iloc[:,0]
-    else:
-        close_series = data_close
-
-    close_series = pd.to_numeric(close_series, errors='coerce')
+    # ------------------ SAFE CLOSE COLUMN ------------------
+    data_close = data['Close'] if 'Close' in data.columns else data.iloc[:,0]
+    close_series = pd.to_numeric(data_close, errors='coerce')
     close_series.dropna(inplace=True)
-
-    data = pd.DataFrame({
-        'Date': data.index if hasattr(data.index, 'date') else data.index,
-        'Close': close_series.values
-    }).reset_index(drop=True)
+    data = pd.DataFrame({'Date': data.index, 'Close': close_series.values}).reset_index(drop=True)
 
     if data.empty:
         st.warning(f"No valid Close prices for {ticker}")
@@ -203,8 +207,7 @@ for ticker in selected_stocks:
 
     # ------------------ LAST CLOSE ------------------
     last_close = data['Close'].iloc[-1]
-    last_close_date = data['Date'].iloc[-1]
-    st.write(f"Last Close: Date {last_close_date.date()}, Price ₹{last_close:.2f}")
+    st.write(f"Last Close: Date {data['Date'].iloc[-1].date()}, Price ₹{last_close:.2f}")
 
     # ------------------ HISTORICAL CLOSE PLOT ------------------
     st.subheader(f'{ticker} Historical Close Price')
@@ -217,13 +220,10 @@ for ticker in selected_stocks:
     st.pyplot(plt)
 
     # ------------------ FEATURE ENGINEERING ------------------
-    # Lag features
     for i in range(1, 8):
         data[f'Close_Lag{i}'] = data['Close'].shift(i)
-    # Rolling averages
     data['MA3'] = data['Close'].rolling(3).mean()
     data['MA5'] = data['Close'].rolling(5).mean()
-    # Returns
     data['Return1'] = data['Close'].pct_change(1)
     data['Return3'] = data['Close'].pct_change(3)
     data.dropna(inplace=True)
@@ -236,18 +236,18 @@ for ticker in selected_stocks:
     model = RandomForestRegressor(n_estimators=200, random_state=42)
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
-
     st.write('Model Performance: MSE:', mean_squared_error(y_test, y_pred), ', R2:', r2_score(y_test, y_pred))
 
     # ------------------ FORECAST ------------------
     max_forecast_days = (future_date_input - data['Date'].iloc[-1].date()).days
     if max_forecast_days < 1:
-        st.warning(f"Prediction date for {ticker} is before or equal to last available date.")
+        st.warning(f"Prediction date for {ticker} is before last available date.")
         continue
     forecast_days = st.sidebar.slider(f"Forecast Days for {ticker}", 1, max_forecast_days, min(5, max_forecast_days))
 
-    last_data = list(data[f'Close_Lag{i}'].iloc[-1] for i in range(1,8))  # last 7 lags
-    forecasts, lower_ci, upper_ci = forecast_future_prices_with_ci(model, last_data, forecast_days)
+    # Prepare last row for forecasting
+    last_features_df = data[feature_cols].tail(1).reset_index(drop=True)
+    forecasts, lower_ci, upper_ci = forecast_future_prices_with_ci(model, last_features_df, forecast_days)
     forecast_dates = pd.bdate_range(start=data['Date'].iloc[-1].date() + datetime.timedelta(days=1), periods=forecast_days)
     forecast_df = pd.DataFrame({
         'Date': forecast_dates,
@@ -255,7 +255,6 @@ for ticker in selected_stocks:
         'Lower_CI': lower_ci,
         'Upper_CI': upper_ci
     })
-
     st.dataframe(forecast_df)
     all_forecasts[ticker] = forecast_df
 
@@ -268,7 +267,7 @@ for ticker in selected_stocks:
         'Expected_Return_%': expected_return
     })
 
-# ------------------ COMBINED FORECAST PLOT WITH COLORS AND HIGHLIGHT ------------------
+# ------------------ COMBINED FORECAST PLOT ------------------
 st.subheader("Combined Forecasted Prices with 95% CI")
 combined_forecast_fig, ax = plt.subplots(figsize=(12,6))
 ax.set_title("Forecasted Close Prices")
@@ -299,3 +298,4 @@ if all_forecasts:
     combined_csv = pd.concat(all_forecasts, names=['Stock']).reset_index(level=0)
     csv_bytes = combined_csv.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download All Forecasts CSV", csv_bytes, "multi_stock_forecast.csv", "text/csv")
+
