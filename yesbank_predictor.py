@@ -148,13 +148,15 @@ if data.empty:
 
 # ------------------ SAFE CLOSE SERIES ------------------
 if 'Close' in data.columns:
-    data_close = data['Close']  # Series
+    data_close = data['Close']
 else:
-    data_close = data.iloc[:, 0]  # take first column as fallback
+    data_close = data.iloc[:, 0]  # fallback first column
+    if isinstance(data_close, pd.DataFrame):
+        data_close = data_close.iloc[:, 0]  # ensure 1-D Series
 
 data_close = pd.to_numeric(data_close, errors='coerce')
 data_close.dropna(inplace=True)
-data_close = data_close.reset_index()  # reset index to have 'Date' column
+data_close = data_close.reset_index()  # gives 'Date' and 'Close' columns
 
 # ------------------ SCALE DATA ------------------
 scaler = MinMaxScaler(feature_range=(0,1))
@@ -198,7 +200,7 @@ for _ in range(num_sim):
     sim = []
     for _ in range(forecast_days):
         pred = model.predict(temp_seq, verbose=0)[0,0]
-        pred += np.random.normal(0, 0.002)  # add small stochastic noise
+        pred += np.random.normal(0, 0.002)  # small noise
         sim.append(pred)
         temp_seq = np.append(temp_seq[:,1:,:], [[[pred]]], axis=1)
     simulations.append(sim)
