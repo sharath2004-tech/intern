@@ -98,7 +98,6 @@
 # Hardcoded credentials (for demo)
 
 
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -147,20 +146,23 @@ if data.empty:
     st.error("No data fetched. Check ticker or date range.")
     st.stop()
 
-# ------------------ PREPARE CLOSE SERIES ------------------
-data_close = data['Close'].copy()
+# ------------------ SAFE CLOSE SERIES ------------------
+if 'Close' in data.columns:
+    data_close = data['Close']  # Series
+else:
+    data_close = data.iloc[:, 0]  # take first column as fallback
+
 data_close = pd.to_numeric(data_close, errors='coerce')
 data_close.dropna(inplace=True)
-data_close = data_close.values.reshape(-1,1)
+data_close = data_close.reset_index()  # reset index to have 'Date' column
 
 # ------------------ SCALE DATA ------------------
 scaler = MinMaxScaler(feature_range=(0,1))
-scaled_data = scaler.fit_transform(data_close)
+scaled_data = scaler.fit_transform(data_close['Close'].values.reshape(-1,1))
 
 # ------------------ CREATE SEQUENCES ------------------
 def create_sequences(data, seq_len=60):
-    X = []
-    y = []
+    X, y = [], []
     for i in range(seq_len, len(data)):
         X.append(data[i-seq_len:i, 0])
         y.append(data[i,0])
@@ -184,10 +186,10 @@ model.fit(X_train, y_train, epochs=20, batch_size=32, verbose=0)
 
 # ------------------ FORECAST ------------------
 last_seq = scaled_data[-SEQ_LEN:].reshape(1,SEQ_LEN,1)
-forecast_days = (forecast_date - data.index[-1].date()).days
+forecast_days = (forecast_date - data_close['Date'].iloc[-1].date()).days
 forecast = []
 
-# Monte Carlo for confidence interval
+# Monte Carlo simulation for confidence interval
 num_sim = 50
 simulations = []
 
@@ -196,8 +198,7 @@ for _ in range(num_sim):
     sim = []
     for _ in range(forecast_days):
         pred = model.predict(temp_seq, verbose=0)[0,0]
-        # add small stochastic noise
-        pred += np.random.normal(0, 0.002)
+        pred += np.random.normal(0, 0.002)  # add small stochastic noise
         sim.append(pred)
         temp_seq = np.append(temp_seq[:,1:,:], [[[pred]]], axis=1)
     simulations.append(sim)
@@ -207,7 +208,7 @@ forecast_mean = scaler.inverse_transform(simulations.mean(axis=0).reshape(-1,1))
 forecast_lower = scaler.inverse_transform(np.percentile(simulations, 2.5, axis=0).reshape(-1,1)).flatten()
 forecast_upper = scaler.inverse_transform(np.percentile(simulations, 97.5, axis=0).reshape(-1,1)).flatten()
 
-forecast_dates = pd.bdate_range(start=data.index[-1].date() + datetime.timedelta(days=1), periods=forecast_days)
+forecast_dates = pd.bdate_range(start=data_close['Date'].iloc[-1].date() + datetime.timedelta(days=1), periods=forecast_days)
 
 forecast_df = pd.DataFrame({
     'Date': forecast_dates,
@@ -216,9 +217,10 @@ forecast_df = pd.DataFrame({
     'Upper_CI': forecast_upper
 })
 
+# ------------------ PLOTS ------------------
 st.subheader("Historical Close Price")
 plt.figure(figsize=(12,6))
-plt.plot(data.index, data['Close'], label='Historical Close')
+plt.plot(data_close['Date'], data_close['Close'], label='Historical Close')
 plt.xlabel("Date")
 plt.ylabel("Close Price")
 plt.legend()
@@ -226,7 +228,7 @@ st.pyplot(plt)
 
 st.subheader(f"Forecasted Close Price till {forecast_date}")
 plt.figure(figsize=(12,6))
-plt.plot(data.index, data['Close'], label='Historical Close')
+plt.plot(data_close['Date'], data_close['Close'], label='Historical Close')
 plt.plot(forecast_df['Date'], forecast_df['Forecasted_Close'], linestyle='--', color='orange', label='Forecast')
 plt.fill_between(forecast_df['Date'], forecast_df['Lower_CI'], forecast_df['Upper_CI'], color='orange', alpha=0.2, label='95% CI')
 plt.xlabel("Date")
@@ -238,7 +240,7 @@ st.subheader("Forecast Table")
 st.dataframe(forecast_df)
 
 # ------------------ LAST CLOSE AND EXPECTED RETURN ------------------
-last_close = data['Close'].iloc[-1]
+last_close = data_close['Close'].iloc[-1]
 st.write(f"Last Close: ₹{last_close:.2f}")
 expected_return = (forecast_mean[-1] - last_close)/last_close*100
 st.write(f"Forecasted Price on {forecast_date}: ₹{forecast_mean[-1]:.2f}")
