@@ -105,6 +105,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
 import datetime
 
 # ------------------ LOGIN ------------------
@@ -116,7 +117,6 @@ if not st.session_state.logged_in:
     st.subheader("Sign In")
     username = st.text_input("Enter your username")
     login_btn = st.button("Login")
-
     if login_btn:
         if username.strip() != "":
             st.session_state.logged_in = True
@@ -126,33 +126,42 @@ if not st.session_state.logged_in:
             st.error("Please enter a valid username")
     st.stop()
 
-st.write(f"Hello, {st.session_state.username}! You can now access the stock predictor app.")
+st.write(f"Hello, {st.session_state.username}! Access the stock predictor app.")
 
-# ------------------ STOCK SELECTION ------------------
+# ------------------ SETTINGS ------------------
 stocks = [
     'YESBANK.NS', 'HDFCBANK.NS', 'ICICIBANK.NS', 'SBIN.NS', 'KOTAKBANK.NS',
     'AXISBANK.NS', 'BANKBARODA.NS', 'PNB.NS', 'INDUSINDBK.NS', 'IDFCFIRSTB.NS',
     'FEDERALBNK.NS'
 ]
 
-stock1 = st.sidebar.selectbox("Select first stock", stocks, index=0)
-stock2 = st.sidebar.selectbox("Select second stock", stocks, index=1)
+stock1 = st.sidebar.selectbox('Select first stock', stocks, index=0)
+stock2 = st.sidebar.selectbox('Select second stock', stocks, index=1)
 start_date = st.sidebar.date_input('Start Date', datetime.date(2015,1,1))
-future_date_input = st.sidebar.date_input('Prediction Date', datetime.date(2025,12,25))
+future_date_input = st.sidebar.date_input('Prediction Date', datetime.date(2025,12,31))
 today = datetime.date.today()
 
-# ------------------ FETCH DATA ------------------
+# ------------------ FETCH DATA FUNCTION ------------------
 @st.cache_data
 def fetch_data(ticker):
     df = yf.download(ticker, start=start_date, end=today)
     if df.empty:
         return None
-    if 'Close' in df.columns:
-        close = df['Close']
+
+    # Handle MultiIndex
+    if isinstance(df.columns, pd.MultiIndex):
+        if 'Close' in df.columns.get_level_values(0):
+            close = df['Close']
+        else:
+            close = df.iloc[:, 0]
     else:
-        close = df.iloc[:, 0]
-    close = pd.Series(pd.to_numeric(close, errors='coerce')).dropna()
-    close = close.reset_index()
+        close = df['Close'] if 'Close' in df.columns else df.iloc[:, 0]
+
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]  # Ensure 1-D Series
+
+    close = pd.to_numeric(close, errors='coerce')
+    close = close.dropna().reset_index()
     close.columns = ['Date', 'Close']
     return close
 
@@ -160,69 +169,65 @@ data1 = fetch_data(stock1)
 data2 = fetch_data(stock2)
 
 if data1 is None or data2 is None:
-    st.error("Could not fetch data for one of the stocks.")
+    st.error("Failed to fetch data for one or both stocks. Check ticker or date range.")
     st.stop()
 
-# ------------------ HISTORICAL PLOTS ------------------
-st.subheader(f"Historical Close Price: {stock1}")
-plt.figure(figsize=(12,5))
-plt.plot(data1['Date'], data1['Close'], label=stock1, color='blue')
-plt.xlabel("Date")
-plt.ylabel("Close Price (INR)")
+# ------------------ PLOT HISTORICAL ------------------
+st.subheader(f"{stock1} Historical Close")
+plt.figure(figsize=(10,5))
+plt.plot(data1['Date'], data1['Close'], label=f'{stock1} Close')
+plt.xlabel('Date')
+plt.ylabel('Close Price (INR)')
 plt.legend()
 st.pyplot(plt)
 
-st.subheader(f"Historical Close Price: {stock2}")
-plt.figure(figsize=(12,5))
-plt.plot(data2['Date'], data2['Close'], label=stock2, color='green')
-plt.xlabel("Date")
-plt.ylabel("Close Price (INR)")
+st.subheader(f"{stock2} Historical Close")
+plt.figure(figsize=(10,5))
+plt.plot(data2['Date'], data2['Close'], label=f'{stock2} Close', color='orange')
+plt.xlabel('Date')
+plt.ylabel('Close Price (INR)')
 plt.legend()
 st.pyplot(plt)
 
-# ------------------ RANDOM FOREST FORECAST FUNCTION ------------------
-def forecast_stock(data):
-    if len(data) < 4:
-        return None, None
-    df = data.copy()
-    df['Lag1'] = df['Close'].shift(1)
-    df['Lag2'] = df['Close'].shift(2)
-    df['Lag3'] = df['Close'].shift(3)
-    df.dropna(inplace=True)
+# ------------------ FEATURE ENGINEERING & MODEL ------------------
+def train_and_forecast(data, future_date):
+    # Lag features
+    data['Lag1'] = data['Close'].shift(1)
+    data['Lag2'] = data['Close'].shift(2)
+    data['Lag3'] = data['Close'].shift(3)
+    data.dropna(inplace=True)
 
-    X = df[['Lag1','Lag2','Lag3']]
-    y = df['Close']
+    X = data[['Lag1','Lag2','Lag3']]
+    y = data['Close']
+
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-
     model = RandomForestRegressor(n_estimators=200, random_state=42)
     model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
 
-    last_data = df.tail(3)['Close'].values
+    # Forecast next day (or n days)
+    last_data = data.tail(3)['Close'].values
     future_features = np.array([last_data[-1], last_data[-2], last_data[-3]]).reshape(1,-1)
     future_price = model.predict(future_features)[0]
-    return future_price, model
 
-# ------------------ FORECAST ------------------
-forecast1, _ = forecast_stock(data1)
-forecast2, _ = forecast_stock(data2)
+    return model, future_price, mean_squared_error(y_test, y_pred), r2_score(y_test, y_pred)
 
-# ------------------ SEPARATE FORECAST PLOTS ------------------
-st.subheader(f"Forecasted Close Price: {stock1}")
-plt.figure(figsize=(12,5))
-plt.plot(data1['Date'].iloc[-100:], data1['Close'].iloc[-100:], label=f'{stock1} Historical', color='blue')
-plt.scatter(future_date_input, forecast1, color='red', label=f'{stock1} Forecast', s=100)
-plt.xlabel("Date")
-plt.ylabel("Close Price (INR)")
+model1, forecast1, mse1, r21 = train_and_forecast(data1, future_date_input)
+model2, forecast2, mse2, r22 = train_and_forecast(data2, future_date_input)
+
+# ------------------ DISPLAY FORECAST ------------------
+st.subheader(f"Predicted Close Price for {future_date_input}")
+st.write(f"{stock1}: ₹{forecast1:.2f} (MSE: {mse1:.2f}, R2: {r21:.2f})")
+st.write(f"{stock2}: ₹{forecast2:.2f} (MSE: {mse2:.2f}, R2: {r22:.2f})")
+
+# ------------------ PLOT BOTH HISTORICAL + FORECAST ------------------
+st.subheader("Historical & Predicted Close Price")
+plt.figure(figsize=(10,5))
+plt.plot(data1['Date'], data1['Close'], label=f'{stock1} Historical')
+plt.plot(data2['Date'], data2['Close'], label=f'{stock2} Historical', color='orange')
+plt.scatter(future_date_input, forecast1, color='blue', label=f'{stock1} Forecast', s=100)
+plt.scatter(future_date_input, forecast2, color='red', label=f'{stock2} Forecast', s=100)
+plt.xlabel('Date')
+plt.ylabel('Close Price (INR)')
 plt.legend()
 st.pyplot(plt)
-st.write(f"Forecasted {stock1} Close Price on {future_date_input}: ₹{forecast1:.2f}")
-
-st.subheader(f"Forecasted Close Price: {stock2}")
-plt.figure(figsize=(12,5))
-plt.plot(data2['Date'].iloc[-100:], data2['Close'].iloc[-100:], label=f'{stock2} Historical', color='green')
-plt.scatter(future_date_input, forecast2, color='orange', label=f'{stock2} Forecast', s=100)
-plt.xlabel("Date")
-plt.ylabel("Close Price (INR)")
-plt.legend()
-st.pyplot(plt)
-st.write(f"Forecasted {stock2} Close Price on {future_date_input}: ₹{forecast2:.2f}")
