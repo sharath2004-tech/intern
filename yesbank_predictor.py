@@ -152,9 +152,9 @@ def forecast_future_prices_with_ci(model, last_data, n_days):
     forecasts = []
     lower_ci = []
     upper_ci = []
-    data_window = list(last_data[-3:])
+    data_window = list(last_data)
     for _ in range(n_days):
-        X_new = np.array(data_window[-3:]).reshape(1, -1)
+        X_new = np.array(data_window[-7:]).reshape(1, -1)  # 7 lag features
         all_tree_preds = np.array([tree.predict(X_new)[0] for tree in model.estimators_])
         y_pred = np.mean(all_tree_preds)
         std_pred = np.std(all_tree_preds)
@@ -165,8 +165,8 @@ def forecast_future_prices_with_ci(model, last_data, n_days):
     return forecasts, lower_ci, upper_ci
 
 # ------------------ PROCESS EACH STOCK ------------------
-all_forecasts = {}  # for CSV download
-summary_table = []  # for expected return comparison
+all_forecasts = {}
+summary_table = []
 
 for ticker in selected_stocks:
     st.write(f"### {ticker}")
@@ -184,7 +184,6 @@ for ticker in selected_stocks:
     else:
         data_close = data['Close'] if 'Close' in data.columns else data.iloc[:,0]
 
-    # Ensure a Series and numeric
     if isinstance(data_close, pd.DataFrame):
         close_series = data_close.iloc[:,0]
     else:
@@ -193,7 +192,6 @@ for ticker in selected_stocks:
     close_series = pd.to_numeric(close_series, errors='coerce')
     close_series.dropna(inplace=True)
 
-    # Reconstruct DataFrame with Date and Close
     data = pd.DataFrame({
         'Date': data.index if hasattr(data.index, 'date') else data.index,
         'Close': close_series.values
@@ -219,15 +217,19 @@ for ticker in selected_stocks:
     st.pyplot(plt)
 
     # ------------------ FEATURE ENGINEERING ------------------
-    if len(data) < 4:
-        st.warning(f"Not enough data for {ticker} to forecast.")
-        continue
-    data['Close_Lag1'] = data['Close'].shift(1)
-    data['Close_Lag2'] = data['Close'].shift(2)
-    data['Close_Lag3'] = data['Close'].shift(3)
+    # Lag features
+    for i in range(1, 8):
+        data[f'Close_Lag{i}'] = data['Close'].shift(i)
+    # Rolling averages
+    data['MA3'] = data['Close'].rolling(3).mean()
+    data['MA5'] = data['Close'].rolling(5).mean()
+    # Returns
+    data['Return1'] = data['Close'].pct_change(1)
+    data['Return3'] = data['Close'].pct_change(3)
     data.dropna(inplace=True)
 
-    X = data[['Close_Lag1','Close_Lag2','Close_Lag3']]
+    feature_cols = [f'Close_Lag{i}' for i in range(1,8)] + ['MA3','MA5','Return1','Return3']
+    X = data[feature_cols]
     y = data['Close']
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
@@ -244,7 +246,7 @@ for ticker in selected_stocks:
         continue
     forecast_days = st.sidebar.slider(f"Forecast Days for {ticker}", 1, max_forecast_days, min(5, max_forecast_days))
 
-    last_data = data['Close'].tail(3).values
+    last_data = list(data[f'Close_Lag{i}'].iloc[-1] for i in range(1,8))  # last 7 lags
     forecasts, lower_ci, upper_ci = forecast_future_prices_with_ci(model, last_data, forecast_days)
     forecast_dates = pd.bdate_range(start=data['Date'].iloc[-1].date() + datetime.timedelta(days=1), periods=forecast_days)
     forecast_df = pd.DataFrame({
@@ -255,10 +257,9 @@ for ticker in selected_stocks:
     })
 
     st.dataframe(forecast_df)
-
     all_forecasts[ticker] = forecast_df
 
-    # ------------------ EXPECTED RETURN ------------------
+    # Expected return
     expected_return = (forecasts[-1] - last_close) / last_close * 100
     summary_table.append({
         'Stock': ticker,
@@ -274,19 +275,13 @@ ax.set_title("Forecasted Close Prices")
 ax.set_xlabel("Date")
 ax.set_ylabel("Close Price (INR)")
 
-# Define unique colors for each stock
-colors = plt.cm.tab10.colors  # up to 10 unique colors
+colors = plt.cm.tab10.colors
 ticker_colors = {ticker: colors[i % len(colors)] for i, ticker in enumerate(all_forecasts.keys())}
-
-# Find stock with highest expected return
-if summary_table:
-    max_return_stock = max(summary_table, key=lambda x: x['Expected_Return_%'])['Stock']
-else:
-    max_return_stock = None
+max_return_stock = max(summary_table, key=lambda x: x['Expected_Return_%'])['Stock'] if summary_table else None
 
 for ticker, df_forecast in all_forecasts.items():
     color = ticker_colors[ticker]
-    linewidth = 3 if ticker == max_return_stock else 1.5  # highlight top stock
+    linewidth = 3 if ticker == max_return_stock else 1.5
     ax.plot(df_forecast['Date'], df_forecast['Forecasted_Close'], linestyle='--', color=color, linewidth=linewidth, label=f'{ticker} Forecast')
     ax.fill_between(df_forecast['Date'], df_forecast['Lower_CI'], df_forecast['Upper_CI'], color=color, alpha=0.2)
 
