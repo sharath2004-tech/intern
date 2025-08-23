@@ -100,7 +100,6 @@
 
 
 
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -147,7 +146,7 @@ if len(selected_stocks) == 0:
     st.warning("Please select at least one stock.")
     st.stop()
 
-# ------------------ FORECAST FUNCTION WITH ALL FEATURES ------------------
+# ------------------ FORECAST FUNCTION ------------------
 def forecast_future_prices_with_ci(model, last_features_df, n_days):
     forecasts = []
     lower_ci = []
@@ -163,7 +162,7 @@ def forecast_future_prices_with_ci(model, last_features_df, n_days):
         lower_ci.append(y_pred - 1.96 * std_pred)
         upper_ci.append(y_pred + 1.96 * std_pred)
         
-        # Build new row
+        # Build new row for next day
         new_row = {}
         # Shift lag features
         for i in range(7,0,-1):
@@ -196,9 +195,24 @@ for ticker in selected_stocks:
         continue
 
     # ------------------ SAFE CLOSE COLUMN ------------------
-    data_close = data['Close'] if 'Close' in data.columns else data.iloc[:,0]
+    # Handle MultiIndex columns from yfinance
+    if isinstance(data.columns, pd.MultiIndex):
+        if 'Close' in data.columns.get_level_values(0):
+            data_close = data['Close']
+        else:
+            data_close = data.iloc[:,0]
+    else:
+        data_close = data['Close'] if 'Close' in data.columns else data.iloc[:,0]
+
+    # Ensure 1-D Series
+    if isinstance(data_close, pd.DataFrame):
+        data_close = data_close.iloc[:,0]
+
+    # Convert to numeric and drop NaN
     close_series = pd.to_numeric(data_close, errors='coerce')
     close_series.dropna(inplace=True)
+
+    # Final DataFrame
     data = pd.DataFrame({'Date': data.index, 'Close': close_series.values}).reset_index(drop=True)
 
     if data.empty:
